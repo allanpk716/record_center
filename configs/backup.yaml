@@ -1,0 +1,29 @@
+# 录音笔备份工具配置文件
+# 支持绝对路径和相对路径（相对于程序执行目录）
+
+# 源设备配置
+source:
+  device_name: "SR302"                    # 录音笔设备名称
+  base_path: "内部共享存储空间\\录音笔文件" # 设备内基础路径
+  vid: "2207"                            # USB VID
+  pid: "0011"                            # USB PID
+
+# 目标备份配置
+target:
+  base_directory: "./backups"              # 备份目标目录（支持相对/绝对路径）
+  create_subdirs: true                     # 是否创建子目录结构
+
+# 备份配置
+backup:
+  file_extensions: [".opus"]               # 要备份的文件扩展名
+  skip_existing: true                      # 跳过已存在的文件
+  preserve_structure: true                 # 保持原有目录结构
+  max_concurrent: 3                        # 最大并发复制数
+
+# 日志配置
+logging:
+  level: "info"                           # 日志级别: debug, info, warn, error
+  file: "record_center.log"               # 日志文件名
+  console: true                           # 是否输出到控制台
+  rotate_hours: 24                        # 日志轮转时间（小时）
+  max_days: 7                             # 日志保留天数
