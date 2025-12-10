@@ -1,8 +1,8 @@
 {
   "version": "1.0",
-  "last_backup": "2025-12-09T10:00:33.7148227+08:00",
-  "total_files_backed_up": 2,
-  "total_size": 1024000,
+  "last_backup": "2025-12-10T15:23:48.377035+08:00",
+  "total_files_backed_up": 3,
+  "total_size": 143987741,
   "records": [
     {
       "source_path": "内部共享存储空间\\录音笔文件\\2025\\11月\\11月24日自动保存_1\\11月24日自动保存_1.opus",
@@ -31,8 +31,22 @@
       "verified": true,
       "verify_time": "2025-12-09T10:00:33.7148227+08:00",
       "hash_algorithm": "sha256"
+    },
+    {
+      "source_path": "内部共享存储空间\\录音笔文件\\2025\\11月\\11月24日自动保存_1\\11月24日自动保存_1.opus",
+      "target_path": "C:\\WorkSpace\\Go2Hell\\src\\github.com\\allanpk716\\record_center\\backups\\内部共享存储空间\\录音笔文件\\2025\\11月\\11月24日自动保存_1\\11月24日自动保存_1.opus",
+      "file_size": 142963741,
+      "file_hash": "68492c4c193cc3eab2d79b20e477e97a80c6d0551ba9dcb4f4027f80a4aa37cf",
+      "backup_time": "2025-12-10T15:23:48.377035+08:00",
+      "last_modified": "2025-12-10T15:23:48.377035+08:00",
+      "device_id": "USB\\VID_2207\u0026amp;PID_0011\u0026amp;MI_00\\7\u0026amp;117ED41B\u0026amp;0\u0026amp;0000",
+      "success": true,
+      "integrity_check": true,
+      "verified": true,
+      "verify_time": "2025-12-10T15:23:48.377035+08:00",
+      "hash_algorithm": "sha256"
     }
   ],
   "created_at": "2025-12-09T09:40:59.4082608+08:00",
-  "updated_at": "2025-12-09T10:00:33.7148227+08:00"
+  "updated_at": "2025-12-10T15:23:48.377035+08:00"
 }

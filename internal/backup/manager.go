@@ -19,10 +19,11 @@ type BackupManager struct {
 	log       *logger.Logger
 	tracker   *storage.BackupTracker
 	quiet     bool
+	verbose   bool
 }
 
 // NewManager 创建新的备份管理器
-func NewManager(cfg *config.Config, log *logger.Logger, quiet bool) *BackupManager {
+func NewManager(cfg *config.Config, log *logger.Logger, quiet, verbose bool) *BackupManager {
 	// 初始化备份跟踪器
 	tracker := storage.NewBackupTracker("data/backup_records.json", log)
 	if err := tracker.Load(); err != nil {
@@ -34,6 +35,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, quiet bool) *BackupManag
 		log:     log,
 		tracker: tracker,
 		quiet:   quiet,
+		verbose: verbose,
 	}
 }
 
@@ -42,16 +44,8 @@ func (bm *BackupManager) Run(device *device.DeviceInfo, force bool) error {
 	startTime := time.Now()
 	bm.log.Info("开始备份操作，设备: %s (VID:%s, PID:%s)", device.Name, device.VID, device.PID)
 
-	// 创建组件
+	// 创建文件检查器
 	fileChecker := bm.createFileChecker(device)
-	progressTracker := progress.NewProgressTracker(bm.log)
-	progressDisplay := progress.NewProgressDisplay(progressTracker, bm.quiet, bm.log)
-
-	// 启动进度显示
-	if err := progressDisplay.Start(); err != nil {
-		bm.log.Warn("启动进度显示失败: %v", err)
-	}
-	defer progressDisplay.Stop()
 
 	// 扫描设备文件
 	bm.log.Info("正在扫描设备文件...")
@@ -62,9 +56,10 @@ func (bm *BackupManager) Run(device *device.DeviceInfo, force bool) error {
 
 	if len(allFiles) == 0 {
 		bm.log.Info("没有发现.opus文件，备份完成")
-		progressDisplay.ShowCompletion()
 		return nil
 	}
+
+	bm.log.Info("扫描完成，发现 %d 个文件", len(allFiles))
 
 	// 过滤需要备份的文件
 	filesToBackup, err := fileChecker.FilterFilesToBackup(allFiles, device.DeviceID, force)
@@ -72,16 +67,35 @@ func (bm *BackupManager) Run(device *device.DeviceInfo, force bool) error {
 		return fmt.Errorf("过滤备份文件失败: %w", err)
 	}
 
+	// 生成备份预览
+	preview, err := bm.GeneratePreview(device, allFiles, filesToBackup)
+	if err != nil {
+		return fmt.Errorf("生成预览失败: %w", err)
+	}
+
+	// 显示预览信息
+	bm.DisplayPreview(preview, bm.verbose)
+	bm.DisplayPreviewSummary(preview)
+
 	if len(filesToBackup) == 0 {
 		bm.log.Info("没有需要备份的新文件")
-		progressDisplay.ShowCompletion()
 		return nil
 	}
 
+	// 创建进度组件（在确定需要备份后才创建）
+	progressTracker := progress.NewProgressTracker(bm.log)
+	progressDisplay := progress.NewProgressDisplay(progressTracker, bm.quiet, bm.log)
+
 	// 开始进度跟踪
-	if err := progressTracker.Start(filesToBackup); err != nil {
+	if err := progressTracker.StartWithParams(len(filesToBackup), utils.CalculateTotalSize(filesToBackup)); err != nil {
 		return fmt.Errorf("启动进度跟踪失败: %w", err)
 	}
+
+	// 启动进度显示（使用延迟启动方式）
+	if err := progressDisplay.StartDelayed(len(filesToBackup), utils.CalculateTotalSize(filesToBackup)); err != nil {
+		bm.log.Warn("启动进度显示失败: %v", err)
+	}
+	defer progressDisplay.Stop()
 
 	// 检查磁盘空间
 	if err := fileChecker.CheckDiskSpace(filesToBackup); err != nil {
@@ -136,26 +150,15 @@ func (bm *BackupManager) Check(device *device.DeviceInfo) error {
 		return fmt.Errorf("过滤备份文件失败: %w", err)
 	}
 
-	// 显示统计信息
-	bm.log.Info("扫描结果:")
-	bm.log.Info("  总文件数: %d", len(allFiles))
-	bm.log.Info("  需要备份: %d", len(filesToBackup))
-	bm.log.Info("  已跳过: %d", len(allFiles)-len(filesToBackup))
-
-	var totalSize int64
-	for _, file := range filesToBackup {
-		totalSize += file.Size
+	// 生成备份预览
+	preview, err := bm.GeneratePreview(device, allFiles, filesToBackup)
+	if err != nil {
+		return fmt.Errorf("生成预览失败: %w", err)
 	}
 
-	bm.log.Info("  备份大小: %s", utils.FormatBytes(totalSize))
-
-	// 显示详细文件列表（如果详细模式）
-	if bm.log != nil { // 这里应该检查verbose标志
-		bm.log.Info("需要备份的文件:")
-		for _, file := range filesToBackup {
-			bm.log.Info("  %s (%.2f MB)", file.RelativePath, float64(file.Size)/1024/1024)
-		}
-	}
+	// 显示预览信息
+	bm.DisplayPreview(preview, bm.verbose)
+	bm.DisplayPreviewSummary(preview)
 
 	return nil
 }

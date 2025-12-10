@@ -62,6 +62,35 @@ func (pd *ProgressDisplay) Start() error {
 	return nil
 }
 
+// StartDelayed 延迟启动进度显示，使用传入的参数
+func (pd *ProgressDisplay) StartDelayed(totalFiles int, totalSize int64) error {
+	if pd.quiet {
+		pd.log.Info("静默模式：进度显示已禁用")
+		return nil
+	}
+
+	// 创建进度条
+	pd.progressBar = progressbar.NewOptions64(
+		totalSize,
+		progressbar.OptionSetDescription("备份进度"),
+		progressbar.OptionSetWriter(color.Output),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetItsString("B"),
+		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+	)
+
+	// 启动定时更新
+	pd.ticker = time.NewTicker(500 * time.Millisecond)
+	go pd.updateDisplay()
+
+	pd.log.Debug("进度显示器已启动（延迟模式）")
+	return nil
+}
+
 // Stop 停止显示进度
 func (pd *ProgressDisplay) Stop() {
 	if pd.quiet {

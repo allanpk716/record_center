@@ -58,7 +58,7 @@ var rootCmd = &cobra.Command{
 		log.Info("VID: %s, PID: %s", sr302Device.VID, sr302Device.PID)
 
 		// 创建备份管理器
-		manager := backup.NewManager(cfg, log, quiet)
+		manager := backup.NewManager(cfg, log, quiet, verbose)
 
 		// 执行备份
 		if check {

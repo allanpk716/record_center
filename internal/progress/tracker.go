@@ -149,6 +149,22 @@ func (pt *ProgressTracker) Start(files []*utils.FileInfo) error {
 	return nil
 }
 
+// StartWithParams 使用参数开始进度跟踪
+func (pt *ProgressTracker) StartWithParams(totalFiles int, totalSize int64) error {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	pt.totalFiles = totalFiles
+	pt.completedFiles = 0
+	pt.totalSize = totalSize
+	pt.copiedSize = 0
+	pt.startTime = time.Now()
+	pt.lastUpdateTime = time.Now()
+
+	pt.log.Info("开始备份 %d 个文件，总大小: %s", pt.totalFiles, utils.FormatBytes(pt.totalSize))
+	return nil
+}
+
 // UpdateCurrentFile 更新当前处理的文件
 func (pt *ProgressTracker) UpdateCurrentFile(file *utils.FileInfo) {
 	pt.mu.Lock()
