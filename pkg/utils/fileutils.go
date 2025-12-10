@@ -278,3 +278,120 @@ func CleanOldFiles(dirPath string, days int, log *logger.Logger) error {
 	log.Info("清理完成，删除了 %d 个超过 %d 天的旧文件", cleaned, days)
 	return nil
 }
+
+// IsEmptyDirectory 检查目录是否为空
+func IsEmptyDirectory(dirPath string) (bool, error) {
+	// 打开目录
+	f, err := os.Open(dirPath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	// 读取目录内容
+	_, err = f.Readdirnames(1)
+	if err == io.EOF {
+		// 目录为空
+		return true, nil
+	}
+	if err != nil {
+		// 读取错误
+		return false, err
+	}
+
+	// 目录不为空
+	return false, nil
+}
+
+// ScanEmptyDirectories 扫描所有空目录
+func ScanEmptyDirectories(rootPath string, log *logger.Logger) ([]string, error) {
+	var emptyDirs []string
+
+	// 首先获取所有目录的列表
+	var allDirs []string
+	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Warn("访问路径失败: %s, 错误: %v", path, err)
+			return nil
+		}
+
+		if info.IsDir() && path != rootPath {
+			allDirs = append(allDirs, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("扫描目录失败: %w", err)
+	}
+
+	// 从深层到浅层检查目录是否为空
+	for i := len(allDirs) - 1; i >= 0; i-- {
+		dirPath := allDirs[i]
+		isEmpty, err := IsEmptyDirectory(dirPath)
+		if err != nil {
+			log.Warn("检查目录是否为空失败: %s, 错误: %v", dirPath, err)
+			continue
+		}
+
+		if isEmpty {
+			emptyDirs = append(emptyDirs, dirPath)
+			log.Debug("发现空目录: %s", dirPath)
+		}
+	}
+
+	return emptyDirs, nil
+}
+
+// RemoveEmptyDirectories 递归删除指定目录下的所有空文件夹
+func RemoveEmptyDirectories(dirPath string, log *logger.Logger, dryRun bool) (int, error) {
+	// 清理路径
+	dirPath = filepath.Clean(dirPath)
+
+	// 检查目录是否存在
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		log.Warn("目录不存在: %s", dirPath)
+		return 0, nil
+	}
+
+	// 扫描所有空目录
+	emptyDirs, err := ScanEmptyDirectories(dirPath, log)
+	if err != nil {
+		return 0, fmt.Errorf("扫描空目录失败: %w", err)
+	}
+
+	removed := 0
+
+	// 删除空目录
+	for _, emptyDir := range emptyDirs {
+		if dryRun {
+			log.Info("[DRY RUN] 将删除空目录: %s", emptyDir)
+			removed++
+		} else {
+			// 再次检查目录是否为空（防止在扫描期间有新文件写入）
+			isEmpty, err := IsEmptyDirectory(emptyDir)
+			if err != nil {
+				log.Warn("删除前检查目录失败: %s, 错误: %v", emptyDir, err)
+				continue
+			}
+
+			if isEmpty {
+				if err := os.Remove(emptyDir); err != nil {
+					log.Warn("删除空目录失败: %s, 错误: %v", emptyDir, err)
+				} else {
+					log.Debug("已删除空目录: %s", emptyDir)
+					removed++
+				}
+			} else {
+				log.Debug("跳过非空目录: %s", emptyDir)
+			}
+		}
+	}
+
+	if !dryRun {
+		log.Info("清理空文件夹完成，删除了 %d 个空文件夹", removed)
+	}
+
+	return removed, nil
+}

@@ -15,15 +15,16 @@ import (
 
 // BackupManager 备份管理器
 type BackupManager struct {
-	config    *config.Config
-	log       *logger.Logger
-	tracker   *storage.BackupTracker
-	quiet     bool
-	verbose   bool
+	config         *config.Config
+	log            *logger.Logger
+	tracker        *storage.BackupTracker
+	quiet          bool
+	verbose        bool
+	cleanEmpty     bool
 }
 
 // NewManager 创建新的备份管理器
-func NewManager(cfg *config.Config, log *logger.Logger, quiet, verbose bool) *BackupManager {
+func NewManager(cfg *config.Config, log *logger.Logger, quiet, verbose, cleanEmpty bool) *BackupManager {
 	// 初始化备份跟踪器
 	tracker := storage.NewBackupTracker("data/backup_records.json", log)
 	if err := tracker.Load(); err != nil {
@@ -31,11 +32,12 @@ func NewManager(cfg *config.Config, log *logger.Logger, quiet, verbose bool) *Ba
 	}
 
 	return &BackupManager{
-		config:  cfg,
-		log:     log,
-		tracker: tracker,
-		quiet:   quiet,
-		verbose: verbose,
+		config:      cfg,
+		log:         log,
+		tracker:     tracker,
+		quiet:       quiet,
+		verbose:     verbose,
+		cleanEmpty:  cleanEmpty,
 	}
 }
 
@@ -124,6 +126,20 @@ func (bm *BackupManager) Run(device *device.DeviceInfo, force bool) error {
 
 	progressDisplay.ShowCompletion()
 	bm.log.Info("备份操作完成")
+
+	// 清理空文件夹
+	if bm.cleanEmpty && bm.config.Backup.CleanEmptyFolders {
+		bm.log.Info("开始清理空文件夹...")
+		cleaned, err := utils.RemoveEmptyDirectories(bm.config.Target.BaseDirectory, bm.log, false)
+		if err != nil {
+			bm.log.Warn("清理空文件夹时出错: %v", err)
+		} else if cleaned > 0 {
+			bm.log.Info("清理完成，删除了 %d 个空文件夹", cleaned)
+		} else if bm.verbose {
+			bm.log.Info("没有发现空文件夹")
+		}
+	}
+
 	return nil
 }
 

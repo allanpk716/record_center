@@ -28,6 +28,8 @@ backup:
   resume_interval: "5MB"                   # 保存进度的间隔
   temp_dir: "./temp"                       # 临时文件目录
   resume_max_age: "24h"                    # 断点信息保留时间
+  # 清理空文件夹配置
+  clean_empty_folders: true                # 是否自动清理空文件夹
 
 # 日志配置
 logging:

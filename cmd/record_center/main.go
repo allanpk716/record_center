@@ -19,6 +19,7 @@ var (
 	check       bool
 	force       bool
 	targetDir   string
+	cleanEmpty  bool
 )
 
 // rootCmd 代表基础命令，没有参数就执行
@@ -58,7 +59,7 @@ var rootCmd = &cobra.Command{
 		log.Info("VID: %s, PID: %s", sr302Device.VID, sr302Device.PID)
 
 		// 创建备份管理器
-		manager := backup.NewManager(cfg, log, quiet, verbose)
+		manager := backup.NewManager(cfg, log, quiet, verbose, cleanEmpty)
 
 		// 执行备份
 		if check {
@@ -268,6 +269,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&check, "check", "k", false, "检查模式，只扫描不备份")
 	rootCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "强制重新备份，忽略已备份记录")
 	rootCmd.PersistentFlags().StringVarP(&targetDir, "target", "t", "", "指定备份目标目录（覆盖配置文件）")
+	rootCmd.PersistentFlags().BoolVarP(&cleanEmpty, "clean-empty", "e", true, "自动清理空文件夹")
 
 	// 添加detect子命令
 	rootCmd.AddCommand(detectCmd)

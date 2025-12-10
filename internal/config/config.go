@@ -46,6 +46,8 @@ type BackupConfig struct {
 	ResumeInterval    string   `mapstructure:"resume_interval" yaml:"resume_interval" json:"resume_interval" default:"5MB"`
 	TempDir           string   `mapstructure:"temp_dir" yaml:"temp_dir" json:"temp_dir" default:"./temp"`
 	ResumeMaxAge      string   `mapstructure:"resume_max_age" yaml:"resume_max_age" json:"resume_max_age" default:"24h"`
+	// 新增清理空文件夹配置
+	CleanEmptyFolders bool     `mapstructure:"clean_empty_folders" yaml:"clean_empty_folders" json:"clean_empty_folders" default:"true"`
 }
 
 // 日志配置
