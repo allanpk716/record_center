@@ -262,7 +262,7 @@ func removeDuplicateDevices(devices []*device.DeviceInfo) []*device.DeviceInfo {
 // init 函数在main之前执行，用于初始化命令行参数
 func init() {
 	// 定义命令行参数
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "configs/backup.yaml", "配置文件路径")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "backup.yaml", "配置文件路径")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "详细模式，显示更多信息")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "静默模式，不显示实时进度")
 	rootCmd.PersistentFlags().BoolVarP(&check, "check", "k", false, "检查模式，只扫描不备份")

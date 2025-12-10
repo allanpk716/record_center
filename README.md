@@ -35,7 +35,7 @@ go run cmd/record_center/main.go
 
 ### 2. 配置文件
 
-程序使用 `configs/backup.yaml` 配置文件，首次运行会自动创建默认配置：
+程序使用 `backup.yaml` 配置文件（位于程序根目录），首次运行会自动创建默认配置：
 
 ```yaml
 # 录音笔备份工具配置文件
@@ -152,7 +152,7 @@ record_center detect
 | 参数 | 说明 | 示例 |
 |------|------|------|
 | `detect` | 自动检测录音笔设备信息 | `record_center detect` |
-| `--config` | 指定配置文件路径 | `--config configs/my_config.yaml` |
+| `--config` | 指定配置文件路径 | `--config my_config.yaml` |
 | `--check` | 仅扫描文件，不执行备份 | `--check` |
 | `--force` | 强制重新备份所有文件 | `--force` |
 | `--target` | 指定备份目标目录 | `--target "D:\backups"` |
@@ -207,8 +207,7 @@ record_center/
 │   └── 2025/                   # 按年组织的子目录
 │       └── 11月/               # 按月组织的子目录
 │           └── 具体录音文件
-├── configs/                    # 配置文件目录
-│   └── backup.yaml            # 主配置文件
+├── backup.yaml               # 配置文件（位于根目录）
 ├── data/                       # 数据目录
 │   ├── backup_records.json    # 备份记录
 │   └── resume/                # 断点续传信息
