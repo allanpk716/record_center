@@ -33,10 +33,19 @@ type TargetConfig struct {
 
 // 备份配置
 type BackupConfig struct {
-	FileExtensions   []string `mapstructure:"file_extensions" yaml:"file_extensions" json:"file_extensions"`
-	SkipExisting     bool     `mapstructure:"skip_existing" yaml:"skip_existing" json:"skip_existing"`
+	FileExtensions    []string `mapstructure:"file_extensions" yaml:"file_extensions" json:"file_extensions"`
+	SkipExisting      bool     `mapstructure:"skip_existing" yaml:"skip_existing" json:"skip_existing"`
 	PreserveStructure bool     `mapstructure:"preserve_structure" yaml:"preserve_structure" json:"preserve_structure"`
-	MaxConcurrent    int      `mapstructure:"max_concurrent" yaml:"max_concurrent" json:"max_concurrent"`
+	MaxConcurrent     int      `mapstructure:"max_concurrent" yaml:"max_concurrent" json:"max_concurrent"`
+	// 新增完整性验证配置
+	IntegrityCheck    bool     `mapstructure:"integrity_check" yaml:"integrity_check" json:"integrity_check" default:"true"`
+	HashAlgorithm     string   `mapstructure:"hash_algorithm" yaml:"hash_algorithm" json:"hash_algorithm" default:"sha256"`
+	// 新增断点续传配置
+	EnableResume      bool     `mapstructure:"enable_resume" yaml:"enable_resume" json:"enable_resume" default:"true"`
+	ChunkSize         string   `mapstructure:"chunk_size" yaml:"chunk_size" json:"chunk_size" default:"5MB"`
+	ResumeInterval    string   `mapstructure:"resume_interval" yaml:"resume_interval" json:"resume_interval" default:"5MB"`
+	TempDir           string   `mapstructure:"temp_dir" yaml:"temp_dir" json:"temp_dir" default:"./temp"`
+	ResumeMaxAge      string   `mapstructure:"resume_max_age" yaml:"resume_max_age" json:"resume_max_age" default:"24h"`
 }
 
 // 日志配置

@@ -1,0 +1,225 @@
+//go:build windows
+
+package device
+
+import (
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/allanpk716/record_center/internal/logger"
+)
+
+// WPDAcessor WPD设备访问器
+type WPDAccessor struct {
+	log       *logger.Logger
+	com       *COMInterface
+	connected bool
+	device    *DeviceInfo
+	mutex     sync.RWMutex
+}
+
+// NewWPDAccessor 创建新的WPD访问器
+func NewWPDAccessor(log *logger.Logger) *WPDAccessor {
+	return &WPDAccessor{
+		log: log,
+	}
+}
+
+// ConnectToDevice 连接到设备
+func (w *WPDAccessor) ConnectToDevice(deviceName, vid, pid string) error {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	w.log.Debug("WPD连接设备: %s (VID:%s, PID:%s)", deviceName, vid, pid)
+
+	// 初始化COM接口
+	com, err := NewCOMInterface(w.log)
+	if err != nil {
+		return fmt.Errorf("创建COM接口失败: %w", err)
+	}
+
+	if err := com.Initialize(); err != nil {
+		return fmt.Errorf("初始化COM接口失败: %w", err)
+	}
+
+	// 查找便携式设备
+	devices, err := com.FindPortableDevices()
+	if err != nil {
+		com.Close()
+		return fmt.Errorf("查找便携式设备失败: %w", err)
+	}
+
+	// 查找目标设备
+	var targetDevice *DeviceInfo
+	for _, device := range devices {
+		if strings.Contains(strings.ToLower(device.Name), strings.ToLower(deviceName)) ||
+			strings.Contains(strings.ToLower(device.DeviceID), strings.ToLower(vid)) ||
+			strings.Contains(strings.ToLower(device.DeviceID), strings.ToLower(pid)) {
+			targetDevice = device
+			break
+		}
+	}
+
+	if targetDevice == nil {
+		com.Close()
+		return fmt.Errorf("未找到目标设备: %s", deviceName)
+	}
+
+	w.com = com
+	w.device = targetDevice
+	w.connected = true
+
+	w.log.Info("WPD成功连接到设备: %s", targetDevice.Name)
+	return nil
+}
+
+// ListFiles 列出设备文件
+func (w *WPDAccessor) ListFiles(basePath string) ([]*FileInfo, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	if !w.connected {
+		return nil, fmt.Errorf("设备未连接")
+	}
+
+	w.log.Debug("WPD列出文件: %s", basePath)
+
+	// 使用设备路径搜索
+	devicePath := w.device.DeviceID
+	if devicePath == "" {
+		devicePath = w.device.Name
+	}
+
+	// 搜索.opus文件
+	files, err := w.com.ListDeviceFiles(devicePath, ".opus")
+	if err != nil {
+		w.log.Debug("WPD列出文件失败: %v", err)
+		return nil, fmt.Errorf("列出设备文件失败: %w", err)
+	}
+
+	w.log.Info("WPD找到 %d 个文件", len(files))
+	return files, nil
+}
+
+// GetFileStream 获取文件流
+func (w *WPDAccessor) GetFileStream(filePath string) (io.ReadCloser, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	if !w.connected {
+		return nil, fmt.Errorf("设备未连接")
+	}
+
+	w.log.Debug("WPD获取文件流: %s", filePath)
+
+	// 尝试通过COM获取文件内容
+	content, err := w.com.GetFileContent(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("获取文件内容失败: %w", err)
+	}
+
+	return io.NopCloser(strings.NewReader(string(content))), nil
+}
+
+// Close 关闭连接
+func (w *WPDAccessor) Close() error {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if w.com != nil {
+		w.com.Close()
+		w.com = nil
+	}
+
+	w.connected = false
+	w.device = nil
+
+	w.log.Debug("WPD连接已关闭")
+	return nil
+}
+
+// IsConnected 检查连接状态
+func (w *WPDAccessor) IsConnected() bool {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+	return w.connected
+}
+
+// GetDeviceInfo 获取设备信息
+func (w *WPDAccessor) GetDeviceInfo() *DeviceInfo {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+	return w.device
+}
+
+// GetLastError 获取最后的错误
+func (w *WPDAccessor) GetLastError() error {
+	// 实现错误记录
+	return nil
+}
+
+// 实现MTPInterface接口的其他方法
+
+// GetFilesByPattern 按模式获取文件
+func (w *WPDAccessor) GetFilesByPattern(pattern string) ([]*FileInfo, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	if !w.connected {
+		return nil, fmt.Errorf("设备未连接")
+	}
+
+	devicePath := w.device.DeviceID
+	if devicePath == "" {
+		devicePath = w.device.Name
+	}
+
+	return w.com.ListDeviceFiles(devicePath, pattern)
+}
+
+// GetFileContent 获取文件内容（字节）
+func (w *WPDAccessor) GetFileContent(filePath string) ([]byte, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	if !w.connected {
+		return nil, fmt.Errorf("设备未连接")
+	}
+
+	return w.com.GetFileContent(filePath)
+}
+
+// CopyFileToPath 复制文件到指定路径
+func (w *WPDAccessor) CopyFileToPath(sourcePath, destPath string) error {
+	content, err := w.GetFileContent(sourcePath)
+	if err != nil {
+		return fmt.Errorf("获取源文件失败: %w", err)
+	}
+
+	// 这里应该写入到目标路径
+	// 暂时简化实现
+	w.log.Debug("复制文件: %s -> %s (%d bytes)", sourcePath, destPath, len(content))
+	return nil
+}
+
+// GetDeviceProperties 获取设备属性
+func (w *WPDAccessor) GetDeviceProperties() (map[string]interface{}, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+
+	if !w.connected {
+		return nil, fmt.Errorf("设备未连接")
+	}
+
+	properties := make(map[string]interface{})
+	properties["Name"] = w.device.Name
+	properties["DeviceID"] = w.device.DeviceID
+	properties["VID"] = w.device.VID
+	properties["PID"] = w.device.PID
+	properties["ConnectedAt"] = time.Now()
+
+	return properties, nil
+}

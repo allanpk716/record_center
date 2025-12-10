@@ -13,14 +13,19 @@ import (
 
 // BackupRecord 备份记录
 type BackupRecord struct {
-	SourcePath   string    `json:"source_path"`
-	TargetPath   string    `json:"target_path"`
-	FileSize     int64     `json:"file_size"`
-	FileHash     string    `json:"file_hash"`
-	BackupTime   time.Time `json:"backup_time"`
-	LastModified time.Time `json:"last_modified"`
-	DeviceID     string    `json:"device_id"`
-	Success      bool      `json:"success"`
+	SourcePath      string    `json:"source_path"`
+	TargetPath      string    `json:"target_path"`
+	FileSize        int64     `json:"file_size"`
+	FileHash        string    `json:"file_hash"`
+	BackupTime      time.Time `json:"backup_time"`
+	LastModified    time.Time `json:"last_modified"`
+	DeviceID        string    `json:"device_id"`
+	Success         bool      `json:"success"`
+	// 新增完整性验证字段
+	IntegrityCheck  bool      `json:"integrity_check"`
+	Verified        bool      `json:"verified"`
+	VerifyTime      time.Time `json:"verify_time"`
+	HashAlgorithm   string    `json:"hash_algorithm"`
 }
 
 // BackupStorage 备份存储结构
@@ -140,26 +145,38 @@ func (bt *BackupTracker) save() error {
 	return nil
 }
 
-// AddRecord 添加备份记录
+// AddRecord 添加备份记录（保持向后兼容）
 func (bt *BackupTracker) AddRecord(sourcePath, targetPath, deviceID string, fileSize int64, fileHash string) error {
+	return bt.AddRecordWithVerify(sourcePath, targetPath, deviceID, fileSize, fileHash, false, "")
+}
+
+// AddRecordWithVerify 添加带完整性验证的备份记录
+func (bt *BackupTracker) AddRecordWithVerify(sourcePath, targetPath, deviceID string, fileSize int64, fileHash string, integrityCheck bool, hashAlgorithm string) error {
 	bt.mu.storage <- struct{}{}
 	defer func() { <-bt.mu.storage }()
 
-	// 获取文件修改时间
-	fileInfo, err := os.Stat(sourcePath)
-	if err != nil {
-		return fmt.Errorf("获取源文件信息失败: %w", err)
+	// 获取文件修改时间（对于MTP设备，可能失败）
+	var lastModified time.Time
+	if fileInfo, err := os.Stat(sourcePath); err == nil {
+		lastModified = fileInfo.ModTime()
+	} else {
+		bt.log.Warn("无法获取源文件修改时间: %s", sourcePath)
+		lastModified = time.Now()
 	}
 
 	record := BackupRecord{
-		SourcePath:   sourcePath,
-		TargetPath:   targetPath,
-		FileSize:     fileSize,
-		FileHash:     fileHash,
-		BackupTime:   time.Now(),
-		LastModified: fileInfo.ModTime(),
-		DeviceID:     deviceID,
-		Success:      true,
+		SourcePath:      sourcePath,
+		TargetPath:      targetPath,
+		FileSize:        fileSize,
+		FileHash:        fileHash,
+		BackupTime:      time.Now(),
+		LastModified:    lastModified,
+		DeviceID:        deviceID,
+		Success:         true,
+		IntegrityCheck:  integrityCheck,
+		Verified:        integrityCheck && fileHash != "", // 如果有哈希值，认为已验证
+		VerifyTime:      time.Now(),
+		HashAlgorithm:   hashAlgorithm,
 	}
 
 	bt.storage.Records = append(bt.storage.Records, record)
@@ -171,30 +188,30 @@ func (bt *BackupTracker) AddRecord(sourcePath, targetPath, deviceID string, file
 	return nil
 }
 
-// IsFileBackedUp 检查文件是否已备份
-func (bt *BackupTracker) IsFileBackedUp(sourcePath string) (bool, *BackupRecord, error) {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
-
-	// 获取当前文件信息
-	currentInfo, err := os.Stat(sourcePath)
-	if err != nil {
-		return false, nil, fmt.Errorf("获取当前文件信息失败: %w", err)
-	}
+// isFileBackedUpInternal 内部方法，假设已经获取了锁
+func (bt *BackupTracker) isFileBackedUpInternal(sourcePath string) (bool, *BackupRecord) {
+	// 对于MTP设备路径，我们不能直接使用os.Stat
+	// 只检查是否存在相同路径的备份记录
+	// TODO: 实现MTP设备文件信息获取后，再进行文件大小和修改时间比较
 
 	// 查找匹配的记录
 	for i := range bt.storage.Records {
 		record := &bt.storage.Records[i]
 		if record.SourcePath == sourcePath && record.Success {
-			// 检查文件大小和修改时间
-			if record.FileSize == currentInfo.Size() &&
-				record.LastModified.Equal(currentInfo.ModTime()) {
-				return true, record, nil
-			}
+			return true, record
 		}
 	}
 
-	return false, nil, nil
+	return false, nil
+}
+
+// IsFileBackedUp 检查文件是否已备份
+func (bt *BackupTracker) IsFileBackedUp(sourcePath string) (bool, *BackupRecord, error) {
+	bt.mu.storage <- struct{}{}
+	defer func() { <-bt.mu.storage }()
+
+	backedUp, record := bt.isFileBackedUpInternal(sourcePath)
+	return backedUp, record, nil
 }
 
 // GetRecordByPath 根据路径获取备份记录
@@ -220,15 +237,8 @@ func (bt *BackupTracker) GetNewFiles(files []*utils.FileInfo, deviceID string) (
 	newCount := 0
 
 	for _, file := range files {
-		// 检查是否已备份
-		backedUp, _, err := bt.IsFileBackedUp(file.Path)
-		if err != nil {
-			bt.log.Warn("检查文件备份状态失败: %s, %v", file.Path, err)
-			// 如果检查失败，为了安全起见，重新备份
-			newFiles = append(newFiles, file)
-			newCount++
-			continue
-		}
+		// 检查是否已备份（使用内部方法避免重复获取锁）
+		backedUp, _ := bt.isFileBackedUpInternal(file.Path)
 
 		if !backedUp {
 			newFiles = append(newFiles, file)

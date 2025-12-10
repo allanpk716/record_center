@@ -1,0 +1,98 @@
+#ifndef COM_WRAPPER_H
+#define COM_WRAPPER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <windows.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <objbase.h>
+#include <ole2.h>
+#include <oleauto.h>
+#include <shldisp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <wchar.h>
+
+// 使用系统定义的GUID，无需重新定义
+
+// 错误代码定义
+#define COM_SUCCESS 0
+#define COM_ERROR_INITIALIZATION_FAILED 1
+#define COM_ERROR_CREATE_INSTANCE_FAILED 2
+#define COM_ERROR_QUERY_INTERFACE_FAILED 3
+#define COM_ERROR_DEVICE_NOT_FOUND 4
+#define COM_ERROR_ACCESS_DENIED 5
+#define COM_ERROR_INVALID_PARAMETER 6
+#define COM_ERROR_OUT_OF_MEMORY 7
+#define COM_ERROR_TIMEOUT 8
+
+// 设备信息结构
+typedef struct {
+    wchar_t* name;
+    wchar_t* vid;
+    wchar_t* pid;
+    wchar_t* device_id;
+    wchar_t* path;
+} DeviceInfo;
+
+// 文件信息结构
+typedef struct {
+    wchar_t* path;
+    wchar_t* name;
+    wchar_t* relative_path;
+    long long size;
+    FILETIME mod_time;
+    int is_directory;
+} FileInfo;
+
+// Windows Shell COM包装器结构
+typedef struct {
+    IShellDispatch* shell_dispatch;
+    IShellFolder* desktop_folder;
+    IShellFolder* portable_devices;
+    BOOL initialized;
+    HRESULT last_error;
+} WindowsShellCOM;
+
+// 函数声明
+
+// COM初始化和清理
+HRESULT InitializeCOM();
+void UninitializeCOM();
+
+// Windows Shell COM操作
+WindowsShellCOM* CreateWindowsShellCOM();
+void DestroyWindowsShellCOM(WindowsShellCOM* com);
+
+// 设备操作
+HRESULT FindDeviceByName(WindowsShellCOM* com, const wchar_t* device_name, DeviceInfo** device_info);
+HRESULT EnumeratePortableDevices(WindowsShellCOM* com, DeviceInfo** devices, int* count);
+HRESULT GetDevicePath(WindowsShellCOM* com, const wchar_t* device_name, wchar_t** path);
+
+// 文件操作
+HRESULT ListFiles(WindowsShellCOM* com, const wchar_t* device_path, const wchar_t* base_path,
+                  FileInfo** files, int* count);
+HRESULT GetFileProperties(WindowsShellCOM* com, const wchar_t* file_path, FileInfo* file_info);
+
+// 辅助函数
+void FreeDeviceInfo(DeviceInfo* device_info);
+void FreeDeviceInfoArray(DeviceInfo* devices, int count);
+void FreeFileInfo(FileInfo* file_info);
+void FreeFileInfoArray(FileInfo* files, int count);
+HRESULT ConvertBSTRToString(BSTR bstr, char** result);
+HRESULT ConvertStringToBSTR(const char* str, BSTR* result);
+wchar_t* AnsiToWide(const char* ansi);
+char* WideToAnsi(const wchar_t* wide);
+
+// 错误处理
+const char* GetCOMErrorDescription(HRESULT hr);
+void LogError(HRESULT hr, const char* function, const char* context);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // COM_WRAPPER_H

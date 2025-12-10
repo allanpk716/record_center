@@ -1,0 +1,218 @@
+//go:build windows
+
+package device
+
+/*
+#cgo CFLAGS: -O2 -Wall
+#cgo LDFLAGS: -lshell32 -lole32 -loleaut32 -luuid
+
+#include "com_wrapper.h"
+*/
+import "C"
+import (
+	"fmt"
+	"time"
+	"unsafe"
+)
+
+// CGOBridge CGO桥接器
+type CGOBridge struct {
+	com        *C.WindowsShellCOM
+	log        *logger.Logger
+	connected  bool
+	deviceName string
+}
+
+// NewCGOBridge 创建新的CGO桥接器
+func NewCGOBridge(log *logger.Logger) *CGOBridge {
+	return &CGOBridge{
+		log:       log,
+		com:       nil,
+		connected: false,
+	}
+}
+
+// Initialize 初始化CGO桥接器
+func (cb *CGOBridge) Initialize() error {
+	cb.log.Debug("初始化CGO桥接器")
+
+	// 初始化COM
+	hr := C.InitializeCOM()
+	if hr != C.COM_SUCCESS {
+		return fmt.Errorf("COM初始化失败")
+	}
+
+	// 创建Windows Shell COM实例
+	cb.com = C.CreateWindowsShellCOM()
+	if cb.com == nil {
+		return fmt.Errorf("无法创建Windows Shell COM实例")
+	}
+
+	if !cb.com.initialized {
+		C.DestroyWindowsShellCOM(cb.com)
+		cb.com = nil
+		return fmt.Errorf("Windows Shell COM初始化失败")
+	}
+
+	cb.log.Debug("CGO桥接器初始化成功")
+	return nil
+}
+
+// ConnectToDevice 连接到设备
+func (cb *CGOBridge) ConnectToDevice(deviceName, vid, pid string) error {
+	if cb.com == nil {
+		return fmt.Errorf("CGO桥接器未初始化")
+	}
+
+	cb.log.Debug("连接到设备: %s", deviceName)
+
+	// 转换设备名称为宽字符
+	deviceNameCStr := C.CString(deviceName)
+	defer C.free(unsafe.Pointer(deviceNameCStr))
+
+	deviceNameWide := C.AnsiToWide(deviceNameCStr)
+	if deviceNameWide == nil {
+		return fmt.Errorf("设备名称转换失败")
+	}
+	defer C.free(unsafe.Pointer(deviceNameWide))
+
+	// 查找设备
+	var deviceInfo *C.DeviceInfo
+	hr := C.FindDeviceByName(cb.com, deviceNameWide, &deviceInfo)
+	if hr != C.COM_SUCCESS {
+		return fmt.Errorf("未找到设备: %s", deviceName)
+	}
+	defer C.FreeDeviceInfo(deviceInfo)
+
+	cb.deviceName = deviceName
+	cb.connected = true
+
+	cb.log.Info("成功连接到设备: %s", deviceName)
+	return nil
+}
+
+// GetDevicePath 获取设备路径
+func (cb *CGOBridge) GetDevicePath(deviceName string) (string, error) {
+	if cb.com == nil {
+		return "", fmt.Errorf("CGO桥接器未初始化")
+	}
+
+	cb.log.Debug("获取设备路径: %s", deviceName)
+
+	// 转换设备名称为宽字符
+	deviceNameCStr := C.CString(deviceName)
+	defer C.free(unsafe.Pointer(deviceNameCStr))
+
+	deviceNameWide := C.AnsiToWide(deviceNameCStr)
+	if deviceNameWide == nil {
+		return "", fmt.Errorf("设备名称转换失败")
+	}
+	defer C.free(unsafe.Pointer(deviceNameWide))
+
+	// 获取设备路径
+	var path *C.wchar_t
+	hr := C.GetDevicePath(cb.com, deviceNameWide, &path)
+	if hr != C.COM_SUCCESS {
+		return "", fmt.Errorf("无法获取设备路径")
+	}
+	defer C.free(unsafe.Pointer(path))
+
+	// 转换路径为Go字符串
+	pathCStr := C.WideToAnsi(path)
+	defer C.free(unsafe.Pointer(pathCStr))
+
+	devicePath := C.GoString(pathCStr)
+	cb.log.Debug("设备路径: %s", devicePath)
+
+	return devicePath, nil
+}
+
+// ListFiles 列出文件
+func (cb *CGOBridge) ListFiles(devicePath, basePath string) ([]*FileInfo, error) {
+	if cb.com == nil {
+		return nil, fmt.Errorf("CGO桥接器未初始化")
+	}
+
+	cb.log.Debug("列出文件: %s\\%s", devicePath, basePath)
+
+	// 转换路径为宽字符
+	devicePathCStr := C.CString(devicePath)
+	defer C.free(unsafe.Pointer(devicePathCStr))
+
+	devicePathWide := C.AnsiToWide(devicePathCStr)
+	if devicePathWide == nil {
+		return nil, fmt.Errorf("设备路径转换失败")
+	}
+	defer C.free(unsafe.Pointer(devicePathWide))
+
+	basePathCStr := C.CString(basePath)
+	defer C.free(unsafe.Pointer(basePathCStr))
+
+	basePathWide := C.AnsiToWide(basePathCStr)
+	if basePathWide == nil {
+		return nil, fmt.Errorf("基础路径转换失败")
+	}
+	defer C.free(unsafe.Pointer(basePathWide))
+
+	// 列出文件
+	var files *C.FileInfo
+	var count C.int
+	hr := C.ListFiles(cb.com, devicePathWide, basePathWide, &files, &count)
+	if hr != C.COM_SUCCESS {
+		return nil, fmt.Errorf("文件列表获取失败")
+	}
+
+	// 转换为Go结构体
+	goFiles := make([]*FileInfo, 0, count)
+	// 由于C.ListFiles尚未完全实现，这里返回空列表
+	// 实际实现需要遍历C数组并转换
+
+	cb.log.Debug("找到 %d 个文件", count)
+	return goFiles, nil
+}
+
+// IsConnected 检查连接状态
+func (cb *CGOBridge) IsConnected() bool {
+	return cb.connected && cb.com != nil && cb.com.initialized
+}
+
+// Close 关闭连接
+func (cb *CGOBridge) Close() error {
+	if cb.com != nil {
+		C.DestroyWindowsShellCOM(cb.com)
+		cb.com = nil
+	}
+
+	cb.connected = false
+	cb.deviceName = ""
+
+	cb.log.Debug("CGO桥接器已关闭")
+	return nil
+}
+
+// GetCOMError 获取COM错误描述
+func (cb *CGOBridge) GetCOMError(hr C.HRESULT) string {
+	if hr == C.COM_SUCCESS {
+		return "Success"
+	}
+
+	errorCStr := C.GetCOMErrorDescription(hr)
+	defer C.free(unsafe.Pointer(errorCStr))
+
+	return C.GoString(errorCStr)
+}
+
+// LastError 获取最后的错误
+func (cb *CGOBridge) LastError() error {
+	if cb.com == nil {
+		return fmt.Errorf("CGO桥接器未初始化")
+	}
+
+	hr := cb.com.last_error
+	if hr == C.S_OK {
+		return nil
+	}
+
+	errorMsg := cb.GetCOMError(hr)
+	return fmt.Errorf("COM错误: %s (0x%X)", errorMsg, hr)
+}

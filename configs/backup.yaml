@@ -19,6 +19,15 @@ backup:
   skip_existing: true                      # 跳过已存在的文件
   preserve_structure: true                 # 保持原有目录结构
   max_concurrent: 3                        # 最大并发复制数
+  # 完整性验证配置
+  integrity_check: true                    # 启用文件完整性验证
+  hash_algorithm: "sha256"                 # 哈希算法 (md5, sha1, sha256)
+  # 断点续传配置
+  enable_resume: true                      # 启用断点续传功能
+  chunk_size: "5MB"                        # 文件分块大小
+  resume_interval: "5MB"                   # 保存进度的间隔
+  temp_dir: "./temp"                       # 临时文件目录
+  resume_max_age: "24h"                    # 断点信息保留时间
 
 # 日志配置
 logging:

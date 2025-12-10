@@ -219,6 +219,30 @@ func ListAllConnectedDevices() ([]*USBDevice, error) {
 	return enumerateUSBDevices()
 }
 
+// ScanAllUSBDevices 扫描所有USB设备并转换为DeviceInfo格式
+func ScanAllUSBDevices() ([]*DeviceInfo, error) {
+	usbDevices, err := enumerateUSBDevices()
+	if err != nil {
+		return nil, err
+	}
+
+	var deviceInfos []*DeviceInfo
+	for _, usbDevice := range usbDevices {
+		deviceInfo := &DeviceInfo{
+			DeviceID:    usbDevice.DeviceID,
+			Name:        usbDevice.Name,
+			VID:         usbDevice.VID,
+			PID:         usbDevice.PID,
+			IsMTP:       strings.Contains(strings.ToUpper(usbDevice.DeviceType), "MTP"),
+			IsADB:       strings.Contains(strings.ToUpper(usbDevice.DeviceType), "ADB"),
+			ConnectedAt: time.Now(),
+		}
+		deviceInfos = append(deviceInfos, deviceInfo)
+	}
+
+	return deviceInfos, nil
+}
+
 // GetDeviceInfoFromPath 从路径获取设备信息（如果适用）
 func GetDeviceInfoFromPath(path string) (*DeviceInfo, error) {
 	// 这个函数用于处理设备挂载为驱动器的情况
