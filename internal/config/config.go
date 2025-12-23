@@ -11,10 +11,11 @@ import (
 
 // 配置文件结构
 type Config struct {
-	Source  SourceConfig  `mapstructure:"source" yaml:"source" json:"source"`
-	Target  TargetConfig  `mapstructure:"target" yaml:"target" json:"target"`
-	Backup  BackupConfig  `mapstructure:"backup" yaml:"backup" json:"backup"`
-	Logging LoggingConfig `mapstructure:"logging" yaml:"logging" json:"logging"`
+	Source     SourceConfig     `mapstructure:"source" yaml:"source" json:"source"`
+	Target     TargetConfig     `mapstructure:"target" yaml:"target" json:"target"`
+	Backup     BackupConfig     `mapstructure:"backup" yaml:"backup" json:"backup"`
+	Logging    LoggingConfig    `mapstructure:"logging" yaml:"logging" json:"logging"`
+	PowerShell PowerShellConfig `mapstructure:"powershell" yaml:"powershell" json:"powershell"`
 }
 
 // 源设备配置
@@ -59,6 +60,17 @@ type LoggingConfig struct {
 	MaxDays     int    `mapstructure:"max_days" yaml:"max_days" json:"max_days"`
 }
 
+// PowerShell配置
+type PowerShellConfig struct {
+	PreferredVersion   string   `mapstructure:"preferred_version" yaml:"preferred_version" json:"preferred_version"`         // "auto", "5.1", "7.x"
+	FallbackOrder      []string `mapstructure:"fallback_order" yaml:"fallback_order" json:"fallback_order"`                 // 优先尝试的PowerShell可执行文件
+	ExecutionPolicy    string   `mapstructure:"execution_policy" yaml:"execution_policy" json:"execution_policy"`             // "Bypass", "RemoteSigned"
+	TimeoutSeconds     int      `mapstructure:"timeout_seconds" yaml:"timeout_seconds" json:"timeout_seconds"`               // 命令超时时间
+	CompatibilityMode  string   `mapstructure:"compatibility_mode" yaml:"compatibility_mode" json:"compatibility_mode"`       // "strict"严格模式, "loose"宽松模式
+	MaxRetries         int      `mapstructure:"max_retries" yaml:"max_retries" json:"max_retries"`                           // 最大重试次数
+	RetryDelaySeconds  int      `mapstructure:"retry_delay_seconds" yaml:"retry_delay_seconds" json:"retry_delay_seconds"`   // 重试延迟
+}
+
 // 默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -84,6 +96,15 @@ func DefaultConfig() *Config {
 			Console:     true,
 			RotateHours: 24,
 			MaxDays:     7,
+		},
+		PowerShell: PowerShellConfig{
+			PreferredVersion:  "auto",
+			FallbackOrder:     []string{"powershell", "pwsh"},
+			ExecutionPolicy:   "Bypass",
+			TimeoutSeconds:    30,
+			CompatibilityMode: "strict",
+			MaxRetries:        3,
+			RetryDelaySeconds: 1,
 		},
 	}
 }
@@ -119,6 +140,15 @@ func LoadConfig(configPath string) (*Config, error) {
 	viper.SetDefault("logging.console", defaultConfig.Logging.Console)
 	viper.SetDefault("logging.rotate_hours", defaultConfig.Logging.RotateHours)
 	viper.SetDefault("logging.max_days", defaultConfig.Logging.MaxDays)
+
+	// PowerShell配置默认值
+	viper.SetDefault("powershell.preferred_version", defaultConfig.PowerShell.PreferredVersion)
+	viper.SetDefault("powershell.fallback_order", defaultConfig.PowerShell.FallbackOrder)
+	viper.SetDefault("powershell.execution_policy", defaultConfig.PowerShell.ExecutionPolicy)
+	viper.SetDefault("powershell.timeout_seconds", defaultConfig.PowerShell.TimeoutSeconds)
+	viper.SetDefault("powershell.compatibility_mode", defaultConfig.PowerShell.CompatibilityMode)
+	viper.SetDefault("powershell.max_retries", defaultConfig.PowerShell.MaxRetries)
+	viper.SetDefault("powershell.retry_delay_seconds", defaultConfig.PowerShell.RetryDelaySeconds)
 
 	// 打印调试信息
 	fmt.Printf("配置文件路径: %s\n", configPath)
@@ -230,6 +260,11 @@ func validateConfig(config *Config) error {
 		config.Logging.MaxDays = 7
 	}
 
+	// 验证PowerShell配置
+	if err := validatePowerShellConfig(&config.PowerShell); err != nil {
+		return fmt.Errorf("PowerShell配置验证失败: %w", err)
+	}
+
 	return nil
 }
 
@@ -246,6 +281,69 @@ func resolvePath(path string) string {
 	}
 
 	return absPath
+}
+
+// 验证PowerShell配置
+func validatePowerShellConfig(config *PowerShellConfig) error {
+	// 验证首选版本
+	validVersions := []string{"auto", "5.1", "7.x", "5", "7"}
+	versionValid := false
+	for _, version := range validVersions {
+		if config.PreferredVersion == version {
+			versionValid = true
+			break
+		}
+	}
+	if !versionValid {
+		return fmt.Errorf("无效的首选版本: %s，有效值: auto, 5.1, 7.x, 5, 7", config.PreferredVersion)
+	}
+
+	// 验证执行策略
+	validPolicies := []string{"Bypass", "RemoteSigned", "AllSigned", "Restricted", "Default"}
+	policyValid := false
+	for _, policy := range validPolicies {
+		if config.ExecutionPolicy == policy {
+			policyValid = true
+			break
+		}
+	}
+	if !policyValid {
+		return fmt.Errorf("无效的执行策略: %s，有效值: Bypass, RemoteSigned, AllSigned, Restricted, Default", config.ExecutionPolicy)
+	}
+
+	// 验证兼容性模式
+	validModes := []string{"strict", "loose"}
+	modeValid := false
+	for _, mode := range validModes {
+		if config.CompatibilityMode == mode {
+			modeValid = true
+			break
+		}
+	}
+	if !modeValid {
+		return fmt.Errorf("无效的兼容性模式: %s，有效值: strict, loose", config.CompatibilityMode)
+	}
+
+	// 验证降级顺序
+	if len(config.FallbackOrder) == 0 {
+		config.FallbackOrder = []string{"powershell", "pwsh"}
+	}
+
+	// 验证超时设置
+	if config.TimeoutSeconds <= 0 {
+		config.TimeoutSeconds = 30
+	}
+
+	// 验证重试设置
+	if config.MaxRetries < 0 {
+		config.MaxRetries = 3
+	}
+
+	if config.RetryDelaySeconds <= 0 {
+		config.RetryDelaySeconds = 1
+	}
+
+	return nil
 }
 
 // 保存配置

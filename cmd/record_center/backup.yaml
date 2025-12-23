@@ -31,6 +31,16 @@ backup:
   # 清理空文件夹配置
   clean_empty_folders: true                # 是否自动清理空文件夹
 
+# PowerShell 兼容性配置
+powershell:
+  preferred_version: "auto"               # 首选版本: "auto"自动选择, "5.1"Windows PowerShell, "7.x"PowerShell Core
+  fallback_order: ["powershell", "pwsh"]  # 优先尝试的PowerShell可执行文件顺序
+  execution_policy: "Bypass"              # 执行策略: "Bypass", "RemoteSigned", "AllSigned"
+  timeout_seconds: 30                     # 命令执行超时时间（秒）
+  compatibility_mode: "strict"            # 兼容性模式: "strict"严格模式, "loose"宽松模式
+  max_retries: 3                          # 失败后最大重试次数
+  retry_delay_seconds: 1                  # 重试之间的延迟时间（秒）
+
 # 日志配置
 logging:
   level: "info"                           # 日志级别: debug, info, warn, error

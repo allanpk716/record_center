@@ -3,11 +3,9 @@
 package device
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +16,7 @@ import (
 // PowerShellEnhanced 增强的PowerShell MTP访问器
 type PowerShellEnhanced struct {
 	log           *logger.Logger
+	executor      CommandExecutor
 	connected     bool
 	device        *DeviceInfo
 	lastError     error
@@ -26,8 +25,33 @@ type PowerShellEnhanced struct {
 
 // NewPowerShellEnhanced 创建增强的PowerShell访问器
 func NewPowerShellEnhanced(log *logger.Logger) *PowerShellEnhanced {
+	// 创建默认的PowerShell配置
+	psConfig := &PowerShellConfig{
+		PreferredVersion:  "auto",
+		FallbackOrder:     []string{"powershell", "pwsh"},
+		ExecutionPolicy:   "Bypass",
+		TimeoutSeconds:    30,
+		CompatibilityMode: "strict",
+		MaxRetries:        3,
+		RetryDelaySeconds: 1,
+	}
+
 	return &PowerShellEnhanced{
 		log:       log,
+		executor:  NewPowerShellExecutor(log, psConfig),
+		connected: false,
+	}
+}
+
+// NewPowerShellEnhancedWithConfig 使用指定配置创建增强的PowerShell访问器
+func NewPowerShellEnhancedWithConfig(log *logger.Logger, psConfig *PowerShellConfig) *PowerShellEnhanced {
+	if psConfig == nil {
+		return NewPowerShellEnhanced(log)
+	}
+
+	return &PowerShellEnhanced{
+		log:       log,
+		executor:  NewPowerShellExecutor(log, psConfig),
 		connected: false,
 	}
 }
@@ -107,20 +131,20 @@ if ($device) { "FOUND" } else { "NOT_FOUND" }
 	for _, method := range methods {
 		pe.log.Debug("尝试访问方法: %s", method.name)
 
-		cmd := exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-Command", method.cmd)
-		output, err := cmd.CombinedOutput()
+		// 使用新的PowerShell执行器
+		result, err := pe.executor.ExecuteScript(method.cmd)
 		if err != nil {
 			pe.log.Debug("方法 %s 执行失败: %v", method.name, err)
 			continue
 		}
 
-		result := strings.TrimSpace(string(output))
-		if result == "FOUND" {
-			pe.log.Debug("方法 %s 成功", method.name)
+		output := strings.TrimSpace(result.Output)
+		if output == "FOUND" {
+			pe.log.Debug("方法 %s 成功 (使用PowerShell版本: %s)", method.name, result.Version)
 			return nil
 		}
 
-		pe.log.Debug("方法 %s 结果: %s", method.name, result)
+		pe.log.Debug("方法 %s 结果: %s (使用PowerShell版本: %s)", method.name, output, result.Version)
 	}
 
 	return fmt.Errorf("所有访问方法都失败了")
@@ -128,24 +152,22 @@ if ($device) { "FOUND" } else { "NOT_FOUND" }
 
 // checkPowerShellPolicy 检查PowerShell执行策略
 func (pe *PowerShellEnhanced) checkPowerShellPolicy() error {
-	cmd := exec.Command("powershell", "-Command", "Get-ExecutionPolicy")
-	output, err := cmd.Output()
+	pe.log.Debug("检查PowerShell执行策略")
+
+	// 尝试获取执行策略，但不强制要求成功
+	result, err := pe.executor.ExecuteScript("Get-ExecutionPolicy")
 	if err != nil {
-		return fmt.Errorf("无法获取PowerShell执行策略: %w", err)
+		pe.log.Warn("获取PowerShell执行策略失败，但继续执行: %v", err)
+		// 不返回错误，因为我们将在ExecuteScript中使用Bypass参数
+		return nil
 	}
 
-	policy := strings.TrimSpace(string(output))
-	pe.log.Debug("PowerShell执行策略: %s", policy)
+	policy := strings.TrimSpace(result.Output)
+	pe.log.Debug("PowerShell执行策略: %s (使用版本: %s)", policy, result.Version)
 
-	// 检查策略是否允许脚本执行
-	allowedPolicies := []string{"RemoteSigned", "Unrestricted", "Bypass"}
-	for _, allowed := range allowedPolicies {
-		if strings.EqualFold(policy, allowed) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("PowerShell执行策略受限: %s。建议设置为 RemoteSigned", policy)
+	// 无论策略如何，都允许继续，因为我们的PowerShellManager会使用Bypass参数
+	pe.log.Debug("PowerShell执行策略检查完成，将使用Bypass参数执行脚本")
+	return nil
 }
 
 // ListFiles 列出文件
@@ -166,42 +188,15 @@ func (pe *PowerShellEnhanced) ListFiles(basePath string) ([]*FileInfo, error) {
 	for i, script := range methods {
 		pe.log.Debug("尝试文件列表方法 %d/3", i+1)
 
-		cmd := exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-Command", script)
-
-		// 使用context添加超时
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// 启动命令
-		err := cmd.Start()
+		// 使用新的PowerShell执行器
+		result, err := pe.executor.ExecuteScript(script)
 		if err != nil {
-			pe.log.Debug("方法 %d 启动失败: %v", i+1, err)
+			pe.log.Debug("方法 %d 执行失败: %v", i+1, err)
 			continue
 		}
 
-		// 等待命令完成或超时
-		done := make(chan error, 1)
-		go func() {
-			done <- cmd.Wait()
-		}()
-
-		select {
-		case err := <-done:
-			if err != nil {
-				pe.log.Debug("方法 %d 执行失败: %v", i+1, err)
-				continue
-			}
-		case <-ctx.Done():
-			pe.log.Debug("方法 %d 超时", i+1)
-			cmd.Process.Kill()
-			continue
-		}
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			pe.log.Debug("方法 %d 失败或超时: %v", i+1, err)
-			continue
-		}
+		output := result.Output
+		pe.log.Debug("方法 %d 执行成功 (使用PowerShell版本: %s)", i+1, result.Version)
 
 		files, err := pe.parseFileOutput(string(output), basePath)
 		if err != nil {

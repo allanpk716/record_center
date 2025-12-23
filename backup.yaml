@@ -1,0 +1,38 @@
+source:
+    device_name: SR302
+    base_path: 内部共享存储空间\录音笔文件
+    vid: "2207"
+    pid: "0011"
+target:
+    base_directory: ./backups
+    create_subdirs: true
+backup:
+    file_extensions:
+        - .opus
+    skip_existing: true
+    preserve_structure: true
+    max_concurrent: 3
+    integrity_check: false
+    hash_algorithm: ""
+    enable_resume: false
+    chunk_size: ""
+    resume_interval: ""
+    temp_dir: ""
+    resume_max_age: ""
+    clean_empty_folders: false
+logging:
+    level: info
+    file: record_center.log
+    console: true
+    rotate_hours: 24
+    max_days: 7
+powershell:
+    preferred_version: auto
+    fallback_order:
+        - powershell
+        - pwsh
+    execution_policy: Bypass
+    timeout_seconds: 30
+    compatibility_mode: strict
+    max_retries: 3
+    retry_delay_seconds: 1
