@@ -3,6 +3,7 @@ package backup
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"sync"
@@ -202,13 +203,11 @@ func (rm *ResumeManager) getResumeFilePath(filePath string) string {
 	return filepath.Join(rm.storagePath, fmt.Sprintf("%s.resume", hash))
 }
 
-// simpleHash 简单哈希函数，用于生成文件名
+// simpleHash 使用标准库 FNV 哈希函数生成文件名
 func (rm *ResumeManager) simpleHash(s string) string {
-	var hash uint64 = 5381
-	for _, c := range s {
-		hash = ((hash << 5) + hash) + uint64(c)
-	}
-	return fmt.Sprintf("%016x", hash)
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return fmt.Sprintf("%016x", h.Sum64())
 }
 
 // saveToFile 保存断点信息到文件

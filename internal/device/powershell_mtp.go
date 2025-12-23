@@ -25,24 +25,37 @@ func NewPowerShellMTPAccessor(log *logger.Logger) *PowerShellMTPAccessor {
 	}
 }
 
+// sanitizeDeviceName 对设备名称进行转义以防止PowerShell命令注入
+// 转义PowerShell特殊字符：` $ ; & | > < " '
+func sanitizeDeviceName(deviceName string) string {
+	// PowerShell特殊字符转义映射
+	dangerous := []string{"`", "$", ";", "&", "|", ">", "<", "\"", "'"}
+	sanitized := deviceName
+	for _, char := range dangerous {
+		// 在PowerShell中使用反引号`作为转义字符
+		sanitized = strings.ReplaceAll(sanitized, char, "`"+char)
+	}
+	return sanitized
+}
+
 // GetMTPDevicePath 通过PowerShell获取MTP设备路径
 func (ps *PowerShellMTPAccessor) GetMTPDevicePath(deviceName string) (string, error) {
 	ps.log.Debug("使用PowerShell查找MTP设备: %s", deviceName)
 
 	// 方法1: 通过便携式设备命名空间
-	if path := ps.getPortableDevicePath(deviceName); path != "" {
+	if path := ps.getPortableDevicePath(sanitizeDeviceName(deviceName)); path != "" {
 		ps.log.Info("通过便携式设备找到路径: %s", path)
 		return path, nil
 	}
 
 	// 方法2: 通过桌面设备列表
-	if path := ps.getDesktopDevicePath(deviceName); path != "" {
+	if path := ps.getDesktopDevicePath(sanitizeDeviceName(deviceName)); path != "" {
 		ps.log.Info("通过桌面设备找到路径: %s", path)
 		return path, nil
 	}
 
 	// 方法3: 通过WMI增强查询
-	if path := ps.getWMIEnhancedPath(deviceName); path != "" {
+	if path := ps.getWMIEnhancedPath(sanitizeDeviceName(deviceName)); path != "" {
 		ps.log.Info("通过WMI增强查询找到路径: %s", path)
 		return path, nil
 	}
@@ -379,10 +392,25 @@ func (mfs *MTPFileStream) Read(p []byte) (n int, err error) {
 
 // Close 关闭文件流
 func (mfs *MTPFileStream) Close() error {
-	err := mfs.file.Close()
+	var errs []error
+
+	// 关闭文件
+	if mfs.file != nil {
+		if err := mfs.file.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("关闭文件失败: %w", err))
+		}
+	}
+
 	// 删除临时文件
 	if mfs.tempPath != "" {
-		os.Remove(mfs.tempPath)
+		if err := os.Remove(mfs.tempPath); err != nil {
+			errs = append(errs, fmt.Errorf("删除临时文件失败: %w", err))
+		}
 	}
-	return err
+
+	// 如果有错误，返回组合错误
+	if len(errs) > 0 {
+		return fmt.Errorf("关闭流时发生错误: %v", errs)
+	}
+	return nil
 }

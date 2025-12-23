@@ -31,6 +31,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// 初始化日志
 		log := logger.InitLogger(verbose)
+		defer log.Close()
 		log.Info("录音笔备份工具启动")
 
 		// 加载配置
@@ -88,6 +89,7 @@ var detectCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// 初始化日志
 		log := logger.InitLogger(verbose)
+		defer log.Close()
 		log.Info("开始检测录音笔设备...")
 
 		// 检测所有录音笔相关设备

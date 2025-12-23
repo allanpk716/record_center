@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,11 @@ import (
 	"github.com/allanpk716/record_center/internal/logger"
 	"github.com/allanpk716/record_center/internal/storage"
 	"github.com/allanpk716/record_center/pkg/utils"
+)
+
+const (
+	// DefaultBufferSize 默认文件复制缓冲区大小 (64KB)
+	DefaultBufferSize = 64 * 1024
 )
 
 // CopyResult 复制结果
@@ -83,8 +89,8 @@ func NewFileCopier(cfg *config.Config, log *logger.Logger, tracker *storage.Back
 	}
 }
 
-// CopyFiles 复制多个文件
-func (fc *FileCopier) CopyFiles(files []*utils.FileInfo, force bool) <-chan *CopyResult {
+// CopyFiles 复制多个文件（支持取消操作）
+func (fc *FileCopier) CopyFiles(ctx context.Context, files []*utils.FileInfo, force bool) <-chan *CopyResult {
 	resultChan := make(chan *CopyResult, len(files))
 
 	go func() {
@@ -94,11 +100,35 @@ func (fc *FileCopier) CopyFiles(files []*utils.FileInfo, force bool) <-chan *Cop
 		for _, file := range files {
 			go func(f *utils.FileInfo) {
 				defer wg.Done()
-				fc.semaphore <- struct{}{}
-				defer func() { <-fc.semaphore }()
 
-				result := fc.CopyFile(f, force)
-				resultChan <- result
+				// 检查 context 是否已取消
+				select {
+				case fc.semaphore <- struct{}{}:
+					defer func() { <-fc.semaphore }()
+
+					select {
+					case <-ctx.Done():
+						// context 已取消，返回取消错误
+						resultChan <- &CopyResult{
+							File:    f,
+							Success: false,
+							Error:   ctx.Err(),
+						}
+						return
+					default:
+						// 正常执行复制
+						result := fc.CopyFile(f, force)
+						resultChan <- result
+					}
+				case <-ctx.Done():
+					// context 已取消，返回取消错误
+					resultChan <- &CopyResult{
+						File:    f,
+						Success: false,
+						Error:   ctx.Err(),
+					}
+					return
+				}
 			}(file)
 		}
 
@@ -356,7 +386,7 @@ func (fc *FileCopier) copyWithPowerShell(file *utils.FileInfo, targetPath string
 	defer targetFile.Close()
 
 	// 复制文件内容
-	buffer := make([]byte, 64*1024) // 64KB缓冲区
+	buffer := make([]byte, DefaultBufferSize) // 64KB缓冲区
 	var copied int64
 
 	for {
@@ -486,7 +516,7 @@ func (fc *FileCopier) copyRegularFile(srcPath, dstPath string) (int64, error) {
 
 	// 复制内容，同时更新进度
 	var copied int64
-	buffer := make([]byte, 64*1024) // 64KB缓冲区
+	buffer := make([]byte, DefaultBufferSize) // 64KB缓冲区
 	updateInterval := int64(1024 * 1024) // 每MB更新一次进度
 	lastUpdate := int64(0)
 
@@ -580,7 +610,7 @@ func (fc *FileCopier) doResumeCopy(file *utils.FileInfo, resumeInfo *ResumeInfo,
 	// 注意：不在这里关闭文件，在复制完成后关闭
 
 	// 执行复制
-	buffer := make([]byte, 64*1024) // 64KB缓冲区
+	buffer := make([]byte, DefaultBufferSize) // 64KB缓冲区
 	totalCopied := resumeInfo.CopiedBytes
 	lastSave := totalCopied
 
@@ -662,7 +692,7 @@ func (fc *FileCopier) doResumeCopyWithPowerShell(file *utils.FileInfo, resumeInf
 
 	// 定位到断点位置（MTP流可能不支持Seek，需要读取并丢弃）
 	if resumeInfo.CopiedBytes > 0 {
-		discardBuffer := make([]byte, 64*1024)
+		discardBuffer := make([]byte, DefaultBufferSize)
 		remaining := resumeInfo.CopiedBytes
 		for remaining > 0 {
 			toRead := int64(len(discardBuffer))
@@ -681,7 +711,7 @@ func (fc *FileCopier) doResumeCopyWithPowerShell(file *utils.FileInfo, resumeInf
 	}
 
 	// 执行复制
-	buffer := make([]byte, 64*1024) // 64KB缓冲区
+	buffer := make([]byte, DefaultBufferSize) // 64KB缓冲区
 	totalCopied := resumeInfo.CopiedBytes
 	lastSave := totalCopied
 
@@ -826,7 +856,11 @@ func (fc *FileCopier) GetCopyStatistics(results []*CopyResult) map[string]interf
 	stats["skipped_files"] = skippedFiles
 	stats["error_files"] = errorFiles
 	stats["total_bytes"] = totalBytes
-	stats["average_duration"] = time.Duration(totalDuration / int64(totalFiles))
+	if totalFiles > 0 {
+		stats["average_duration"] = time.Duration(totalDuration / int64(totalFiles))
+	} else {
+		stats["average_duration"] = time.Duration(0)
+	}
 	stats["min_duration"] = minDuration
 	stats["max_duration"] = maxDuration
 

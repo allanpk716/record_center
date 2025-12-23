@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/allanpk716/record_center/internal/logger"
 	"github.com/allanpk716/record_center/pkg/utils"
+)
+
+const (
+	// FilePermissions 文件权限 (0644: 所有者读写，组和其他用户只读)
+	FilePermissions = 0644
+	// DirPermissions 目录权限 (0755: 所有者读写执行，组和其他用户读执行)
+	DirPermissions = 0755
 )
 
 // BackupRecord 备份记录
@@ -44,9 +52,7 @@ type BackupTracker struct {
 	storagePath string
 	storage     *BackupStorage
 	log         *logger.Logger
-	mu          struct {
-		storage chan struct{}
-	}
+	mu          sync.Mutex
 }
 
 // NewBackupTracker 创建新的备份跟踪器
@@ -65,9 +71,8 @@ func NewBackupTracker(storagePath string, log *logger.Logger) *BackupTracker {
 
 // Load 加载备份记录
 func (bt *BackupTracker) Load() error {
-	bt.mu.storage = make(chan struct{}, 1)
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	// 如果文件不存在，创建默认存储
 	if _, err := os.Stat(bt.storagePath); os.IsNotExist(err) {
@@ -106,8 +111,8 @@ func (bt *BackupTracker) Load() error {
 
 // Save 保存备份记录
 func (bt *BackupTracker) Save() error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	return bt.save()
 }
@@ -116,7 +121,7 @@ func (bt *BackupTracker) Save() error {
 func (bt *BackupTracker) save() error {
 	// 确保目录存在
 	dir := filepath.Dir(bt.storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, DirPermissions); err != nil {
 		return fmt.Errorf("创建备份记录目录失败: %w", err)
 	}
 
@@ -131,7 +136,7 @@ func (bt *BackupTracker) save() error {
 
 	// 写入临时文件然后重命名（确保原子性）
 	tempPath := bt.storagePath + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+	if err := os.WriteFile(tempPath, data, FilePermissions); err != nil {
 		return fmt.Errorf("写入临时备份记录文件失败: %w", err)
 	}
 
@@ -152,8 +157,8 @@ func (bt *BackupTracker) AddRecord(sourcePath, targetPath, deviceID string, file
 
 // AddRecordWithVerify 添加带完整性验证的备份记录
 func (bt *BackupTracker) AddRecordWithVerify(sourcePath, targetPath, deviceID string, fileSize int64, fileHash string, integrityCheck bool, hashAlgorithm string) error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	// 获取文件修改时间（对于MTP设备，可能失败）
 	var lastModified time.Time
@@ -207,8 +212,8 @@ func (bt *BackupTracker) isFileBackedUpInternal(sourcePath string) (bool, *Backu
 
 // IsFileBackedUp 检查文件是否已备份
 func (bt *BackupTracker) IsFileBackedUp(sourcePath string) (bool, *BackupRecord, error) {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	backedUp, record := bt.isFileBackedUpInternal(sourcePath)
 	return backedUp, record, nil
@@ -216,8 +221,8 @@ func (bt *BackupTracker) IsFileBackedUp(sourcePath string) (bool, *BackupRecord,
 
 // GetRecordByPath 根据路径获取备份记录
 func (bt *BackupTracker) GetRecordByPath(sourcePath string) (*BackupRecord, error) {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	for i := range bt.storage.Records {
 		if bt.storage.Records[i].SourcePath == sourcePath {
@@ -230,8 +235,8 @@ func (bt *BackupTracker) GetRecordByPath(sourcePath string) (*BackupRecord, erro
 
 // GetNewFiles 获取需要备份的新文件
 func (bt *BackupTracker) GetNewFiles(files []*utils.FileInfo, deviceID string) ([]*utils.FileInfo, error) {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	var newFiles []*utils.FileInfo
 	newCount := 0
@@ -252,16 +257,16 @@ func (bt *BackupTracker) GetNewFiles(files []*utils.FileInfo, deviceID string) (
 
 // GetStatistics 获取备份统计信息
 func (bt *BackupTracker) GetStatistics() (int, int64, time.Time, error) {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	return bt.storage.TotalFilesBackedUp, bt.storage.TotalSize, bt.storage.LastBackup, nil
 }
 
 // RemoveRecord 移除备份记录
 func (bt *BackupTracker) RemoveRecord(sourcePath string) error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	for i, record := range bt.storage.Records {
 		if record.SourcePath == sourcePath {
@@ -281,8 +286,8 @@ func (bt *BackupTracker) RemoveRecord(sourcePath string) error {
 
 // ClearRecords 清空所有备份记录
 func (bt *BackupTracker) ClearRecords() error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	bt.storage.Records = make([]BackupRecord, 0)
 	bt.storage.TotalFilesBackedUp = 0
@@ -296,8 +301,8 @@ func (bt *BackupTracker) ClearRecords() error {
 
 // GetRecordsByDevice 获取指定设备的备份记录
 func (bt *BackupTracker) GetRecordsByDevice(deviceID string) []BackupRecord {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	var records []BackupRecord
 	for _, record := range bt.storage.Records {
@@ -311,8 +316,8 @@ func (bt *BackupTracker) GetRecordsByDevice(deviceID string) []BackupRecord {
 
 // CleanOldRecords 清理旧的备份记录
 func (bt *BackupTracker) CleanOldRecords(keepDays int) error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	cutoff := time.Now().AddDate(0, 0, -keepDays)
 	cleaned := 0
@@ -333,21 +338,21 @@ func (bt *BackupTracker) CleanOldRecords(keepDays int) error {
 
 // ExportRecords 导出备份记录
 func (bt *BackupTracker) ExportRecords(exportPath string) error {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	data, err := json.MarshalIndent(bt.storage, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化备份记录失败: %w", err)
 	}
 
-	return os.WriteFile(exportPath, data, 0644)
+	return os.WriteFile(exportPath, data, FilePermissions)
 }
 
 // GetStorage 获取存储对象（只读）
 func (bt *BackupTracker) GetStorage() *BackupStorage {
-	bt.mu.storage <- struct{}{}
-	defer func() { <-bt.mu.storage }()
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
 
 	// 返回副本避免并发问题
 	storageCopy := *bt.storage

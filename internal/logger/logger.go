@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+const (
+	// LogFilePermissions 日志文件权限 (0644: 所有者读写，组和其他用户只读)
+	LogFilePermissions = 0644
+)
+
 // Logger 简单的日志器实现
 type Logger struct {
 	verbose bool
@@ -43,7 +48,7 @@ func (l *Logger) Setup(name, level, logDir string, console bool, enableContext7 
 	logFileName := name + ".log"
 	logFilePath := filepath.Join(logDir, logFileName)
 
-	file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, LogFilePermissions)
 	if err != nil {
 		fmt.Printf("创建日志文件失败: %v\n", err)
 		return

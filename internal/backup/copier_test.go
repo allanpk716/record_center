@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -561,7 +562,7 @@ func TestFileCopier_CopyFiles(t *testing.T) {
 	copier := NewFileCopier(cfg, log, tracker, deviceInfo)
 
 	// 执行并发复制
-	resultChan := copier.CopyFiles(files, false)
+	resultChan := copier.CopyFiles(context.Background(), files, false)
 
 	// 收集结果
 	results := make([]*CopyResult, 0, numFiles)

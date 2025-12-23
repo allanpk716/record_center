@@ -8,6 +8,13 @@ import (
 	"github.com/allanpk716/record_center/pkg/utils"
 )
 
+const (
+	// MaxSpeedSamples 最大速度采样点数量
+	MaxSpeedSamples = 60
+	// SpeedSampleAge 速度采样保留时间
+	SpeedSampleAge = 10 * time.Second
+)
+
 // SpeedSample 速度采样数据
 type SpeedSample struct {
 	Timestamp   time.Time `json:"timestamp"`
@@ -26,8 +33,8 @@ type SpeedCalculator struct {
 func NewSpeedCalculator() *SpeedCalculator {
 	return &SpeedCalculator{
 		samples:    make([]SpeedSample, 0),
-		maxSamples: 60, // 保留60个采样点（约60秒的数据）
-		maxAge:     10 * time.Second, // 保留最近10秒的数据
+		maxSamples: MaxSpeedSamples,
+		maxAge:     SpeedSampleAge,
 	}
 }
 
@@ -35,6 +42,11 @@ func NewSpeedCalculator() *SpeedCalculator {
 func (sc *SpeedCalculator) AddSample(bytesCopied int64) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
+
+	// 兜底检查：如果切片过大，强制清理
+	if len(sc.samples) >= sc.maxSamples*2 {
+		sc.samples = sc.samples[len(sc.samples)-sc.maxSamples:]
+	}
 
 	now := time.Now()
 	sample := SpeedSample{
@@ -198,8 +210,8 @@ func (pt *ProgressTracker) GetProgressInfo() *ProgressInfo {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
-	now := time.Now()
-	pt.elapsedTime = now.Sub(pt.startTime)
+	// 使用局部变量而不是修改字段，避免在读锁内进行写操作
+	elapsedTime := time.Since(pt.startTime)
 
 	progressPercent := float64(0)
 	if pt.totalFiles > 0 {
@@ -226,7 +238,7 @@ func (pt *ProgressTracker) GetProgressInfo() *ProgressInfo {
 		TotalSize:      pt.totalSize,
 		CopiedSize:     pt.copiedSize,
 		Speed:          currentSpeed,
-		ElapsedTime:    pt.elapsedTime,
+		ElapsedTime:    elapsedTime,
 		EstimatedTime:  estimatedTime,
 		ProgressPercent: progressPercent,
 	}

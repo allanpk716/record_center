@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -193,7 +194,7 @@ func (bm *BackupManager) createFileCopier(device *device.DeviceInfo) *FileCopier
 func (bm *BackupManager) copyFilesWithProgress(copier *FileCopier, files []*utils.FileInfo,
 	tracker *progress.ProgressTracker, display *progress.ProgressDisplay, force bool) []*CopyResult {
 
-	resultChan := copier.CopyFiles(files, force)
+	resultChan := copier.CopyFiles(context.Background(), files, force)
 	var results []*CopyResult
 
 	// 处理复制结果
