@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -13,13 +14,14 @@ import (
 )
 
 var (
-	configFile  string
-	verbose     bool
-	quiet       bool
-	check       bool
-	force       bool
-	targetDir   string
-	cleanEmpty  bool
+	configFile     string
+	verbose        bool
+	quiet          bool
+	check          bool
+	force          bool
+	targetDir      string
+	cleanEmpty     bool
+	interactiveMode bool // 交互模式标志（双击运行时启用）
 )
 
 // rootCmd 代表基础命令，没有参数就执行
@@ -28,7 +30,20 @@ var rootCmd = &cobra.Command{
 	Short: "录音笔备份工具",
 	Long: `一个专门为SR302录音笔设计的自动备份工具。
 支持MTP设备检测、增量备份、实时进度显示等功能。`,
+	// 禁用自动完成命令
+	CompletionOptions: cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	},
 	Run: func(cmd *cobra.Command, args []string) {
+		// 检测是否为双击运行
+		if isDoubleClickRun() {
+			interactiveMode = true
+			fmt.Println("============================================================")
+			fmt.Println("         录音笔备份工具 - SR302 自动备份")
+			fmt.Println("============================================================")
+			fmt.Println()
+		}
+
 		// 初始化日志
 		log := logger.InitLogger(verbose)
 		defer log.Close()
@@ -38,6 +53,9 @@ var rootCmd = &cobra.Command{
 		cfg, err := config.LoadConfig(configFile)
 		if err != nil {
 			log.Error("配置加载失败: %v", err)
+			if interactiveMode {
+				waitForKeyPress("配置加载失败，请检查配置文件！")
+			}
 			os.Exit(1)
 		}
 
@@ -53,6 +71,9 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			log.Error("设备检测失败: %v", err)
 			fmt.Printf("错误: %v\n", err)
+			if interactiveMode {
+				waitForKeyPress("设备检测失败，请检查设备连接！")
+			}
 			os.Exit(1)
 		}
 
@@ -73,10 +94,18 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			log.Error("操作失败: %v", err)
 			fmt.Printf("错误: %v\n", err)
+			if interactiveMode {
+				waitForKeyPress("备份操作失败！")
+			}
 			os.Exit(1)
 		}
 
 		log.Info("操作完成")
+
+		// 双击运行时显示完成信息并等待
+		if interactiveMode {
+			waitForKeyPress("备份操作完成！")
+		}
 	},
 }
 
@@ -87,6 +116,15 @@ var detectCmd = &cobra.Command{
 	Long: `自动扫描并列出所有连接的录音笔设备信息，包括设备名称、VID和PID。
 支持的设备包括SR302以及其他类似的录音设备。`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// 检测是否为双击运行
+		isInteractive := isDoubleClickRun()
+		if isInteractive {
+			fmt.Println("============================================================")
+			fmt.Println("         录音笔设备检测")
+			fmt.Println("============================================================")
+			fmt.Println()
+		}
+
 		// 初始化日志
 		log := logger.InitLogger(verbose)
 		defer log.Close()
@@ -96,20 +134,23 @@ var detectCmd = &cobra.Command{
 		devices := detectAllRecordingDevices(log)
 
 		if len(devices) == 0 {
-			fmt.Println("❌ 未找到任何录音笔设备")
+			fmt.Println("未找到任何录音笔设备")
 			fmt.Println("请确保：")
 			fmt.Println("1. 录音笔已连接到电脑")
 			fmt.Println("2. 设备驱动程序已正确安装")
 			fmt.Println("3. 设备处于可访问状态")
+			if isInteractive {
+				waitForKeyPress("未找到设备！")
+			}
 			os.Exit(1)
 		}
 
-		fmt.Println("\n🎤 检测到的录音笔设备：")
+		fmt.Println("\n检测到的录音笔设备：")
 		fmt.Println("=" + strings.Repeat("=", 60))
 
 		// 显示所有检测到的设备
 		for i, dev := range devices {
-			fmt.Printf("\n📱 设备 #%d\n", i+1)
+			fmt.Printf("\n设备 #%d\n", i+1)
 			fmt.Printf("   名称: %s\n", dev.Name)
 			fmt.Printf("   VID:  %s\n", dev.VID)
 			fmt.Printf("   PID:  %s\n", dev.PID)
@@ -130,7 +171,7 @@ var detectCmd = &cobra.Command{
 			if strings.Contains(strings.ToUpper(dev.Name), "SR302") ||
 			   (dev.VID == "2207" && dev.PID == "0011") {
 				sr302Found = true
-				fmt.Println("✅ 检测到SR302设备！")
+				fmt.Println("检测到SR302设备！")
 				fmt.Println("   您可以使用以下配置：")
 				fmt.Printf("   device_name: \"%s\"\n", dev.Name)
 				fmt.Printf("   vid: \"%s\"\n", dev.VID)
@@ -140,15 +181,19 @@ var detectCmd = &cobra.Command{
 		}
 
 		if !sr302Found {
-			fmt.Println("⚠️  未检测到SR302设备，但找到了其他录音设备")
+			fmt.Println("未检测到SR302设备，但找到了其他录音设备")
 			fmt.Println("   您可以尝试使用上述设备配置")
 		}
 
 		fmt.Println("\n" + strings.Repeat("=", 64))
-		fmt.Println("💡 提示：")
+		fmt.Println("提示：")
 		fmt.Println("   - 复制上述配置片段到 configs/backup.yaml 文件中")
 		fmt.Println("   - 然后运行 record_center --check 测试配置")
 		fmt.Println("   - 使用 record_center --verbose 查看详细日志")
+
+		if isInteractive {
+			waitForKeyPress("设备检测完成！")
+		}
 	},
 }
 
@@ -262,6 +307,22 @@ func removeDuplicateDevices(devices []*device.DeviceInfo) []*device.DeviceInfo {
 	return unique
 }
 
+// waitForKeyPress 等待用户按任意键
+func waitForKeyPress(prompt string) {
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println(prompt)
+	fmt.Println("按任意键关闭窗口...")
+
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
+}
+
+// isDoubleClickRun 检测是否为双击运行
+func isDoubleClickRun() bool {
+	// Windows 上双击运行时，os.Args 通常只包含程序路径
+	return len(os.Args) == 1
+}
+
 // init 函数在main之前执行，用于初始化命令行参数
 func init() {
 	// 定义命令行参数
@@ -278,9 +339,19 @@ func init() {
 }
 
 func main() {
+	// 检测是否为双击运行
+	if isDoubleClickRun() {
+		interactiveMode = true
+		// 调试输出
+		fmt.Println("[DEBUG] 双击运行模式已启用")
+	}
+
 	// 执行根命令
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
+		if interactiveMode {
+			waitForKeyPress("程序执行出错！")
+		}
 		os.Exit(1)
 	}
 }
