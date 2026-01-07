@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **开发系统** - 当前开发环境为 Windows 系统。
 3. **BAT 脚本规范** - 编写或编辑 BAT 脚本时，脚本内容不要包含中文字符，确保兼容性。
 4. **脚本修复原则** - 当需要修复脚本时，优先在原有脚本基础上修改，非必需情况不要创建新脚本。
+5. **计划文件管理** - 所有的开发计划文件应存放在 `docs/plans` 目录中，保持项目文档结构清晰。
 
 ## 常用命令
 
