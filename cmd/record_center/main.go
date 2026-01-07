@@ -27,8 +27,8 @@ var (
 
 func main() {
 	// 定义命令行参数（同时支持长短格式）
-	flag.StringVar(&configFile, "config", "backup.yaml", "配置文件路径")
-	flag.StringVar(&configFile, "c", "backup.yaml", "配置文件路径（短格式）")
+	flag.StringVar(&configFile, "config", "configs/backup.yaml", "配置文件路径")
+	flag.StringVar(&configFile, "c", "configs/backup.yaml", "配置文件路径（短格式）")
 	flag.BoolVar(&verbose, "verbose", false, "详细模式，显示更多信息")
 	flag.BoolVar(&verbose, "v", false, "详细模式（短格式）")
 	flag.BoolVar(&quiet, "quiet", false, "静默模式，不显示实时进度")

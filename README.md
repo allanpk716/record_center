@@ -26,8 +26,11 @@
 从 Releases 页面下载对应的可执行文件，或者自行编译：
 
 ```bash
-# 开发环境构建
-go build -o record_center.exe cmd/record_center/main.go
+# 使用构建脚本（推荐）
+scripts\build.bat
+
+# 或者手动构建
+go build -o bin/record_center.exe cmd/record_center/main.go
 
 # 或者直接运行
 go run cmd/record_center/main.go
@@ -35,7 +38,7 @@ go run cmd/record_center/main.go
 
 ### 2. 配置文件
 
-程序使用 `backup.yaml` 配置文件（位于程序根目录），首次运行会自动创建默认配置：
+程序使用 `configs/backup.yaml` 配置文件，首次运行会自动创建默认配置：
 
 ```yaml
 # 录音笔备份工具配置文件
@@ -83,33 +86,33 @@ logging:
 
 #### 首次使用 - 检测设备信息
 ```bash
-record_center.exe detect
+bin\record_center.exe detect
 ```
 这个命令会自动检测您的录音笔并显示配置信息。
 
 #### 检查设备连接和文件（不备份）
 ```bash
-record_center.exe --check
+bin\record_center.exe --check
 ```
 
 #### 执行完整备份
 ```bash
-record_center.exe
+bin\record_center.exe
 ```
 
 #### 强制重新备份所有文件
 ```bash
-record_center.exe --force
+bin\record_center.exe --force
 ```
 
 #### 指定备份目标目录
 ```bash
-record_center.exe --target "D:\录音笔备份"
+bin\record_center.exe --target "D:\录音笔备份"
 ```
 
 #### 显示详细日志
 ```bash
-record_center.exe --verbose
+bin\record_center.exe --verbose
 ```
 
 ### 4. 设备自动检测（新功能）
@@ -117,7 +120,7 @@ record_center.exe --verbose
 如果您不确定录音笔的设备信息，可以使用自动检测命令：
 
 ```bash
-record_center detect
+bin\record_center.exe detect
 ```
 
 这个命令会：
@@ -151,12 +154,14 @@ record_center detect
 
 | 参数 | 说明 | 示例 |
 |------|------|------|
-| `detect` | 自动检测录音笔设备信息 | `record_center detect` |
-| `--config` | 指定配置文件路径 | `--config my_config.yaml` |
-| `--check` | 仅扫描文件，不执行备份 | `--check` |
-| `--force` | 强制重新备份所有文件 | `--force` |
-| `--target` | 指定备份目标目录 | `--target "D:\backups"` |
-| `--verbose` | 显示详细日志输出 | `--verbose` |
+| `detect` | 自动检测录音笔设备信息 | `bin\record_center.exe detect` |
+| `--config, -c` | 指定配置文件路径 | `--config configs\my_config.yaml` |
+| `--check, -k` | 仅扫描文件，不执行备份 | `--check` |
+| `--force, -f` | 强制重新备份所有文件 | `--force` |
+| `--target, -t` | 指定备份目标目录 | `--target "D:\backups"` |
+| `--verbose, -v` | 显示详细日志输出 | `--verbose` |
+| `--quiet, -q` | 静默模式，不显示实时进度 | `--quiet` |
+| `--clean-empty, -e` | 自动清理空文件夹 | `--clean-empty` |
 | `--help, -h` | 显示帮助信息 | `--help` |
 
 ## 工作原理
@@ -200,20 +205,47 @@ record_center detect
 
 ## 目录结构
 
+### 开发目录
 ```
 record_center/
-├── bin/                        # 编译后的可执行文件
+├── cmd/                        # 应用入口
+│   └── record_center/
+│       └── main.go
+├── internal/                   # 内部包
+│   ├── backup/                 # 备份核心功能
+│   ├── config/                 # 配置管理
+│   ├── device/                 # 设备检测和访问
+│   ├── logger/                 # 日志系统
+│   ├── progress/               # 进度显示
+│   └── storage/                # 备份记录存储
+├── pkg/                        # 公共包
+│   └── utils/
+├── configs/                    # 配置文件源（构建时复制到 bin/）
+│   └── backup.yaml
+├── scripts/                    # 构建和工具脚本
+│   ├── build.bat               # 构建脚本
+│   └── get_device_info.ps1     # 设备信息工具
+└── bin/                        # 构建输出和运行环境 [自动生成]
+    ├── record_center.exe       # 主程序
+    ├── configs/                # 运行时配置
+    │   └── backup.yaml
+    ├── backups/                # 备份文件
+    ├── data/                   # 运行时数据
+    ├── logs/                   # 日志文件
+    └── temp/                   # 临时文件
+```
+
+### 部署目录
+构建完成后，`bin/` 目录是完整的独立运行环境，可以直接复制使用：
+```
+bin/
+├── record_center.exe           # 主程序
+├── configs/
+│   └── backup.yaml             # 配置文件
 ├── backups/                    # 备份文件目录
-│   └── 2025/                   # 按年组织的子目录
-│       └── 11月/               # 按月组织的子目录
-│           └── 具体录音文件
-├── backup.yaml               # 配置文件（位于根目录）
-├── data/                       # 数据目录
-│   ├── backup_records.json    # 备份记录
-│   └── resume/                # 断点续传信息
-├── logs/                       # 日志目录
-│   └── record_center.log      # 程序日志
-└── temp/                       # 临时文件目录
+├── data/                       # 运行时数据
+├── logs/                       # 日志文件
+└── temp/                       # 临时文件
 ```
 
 ## 故障排除
@@ -293,6 +325,7 @@ backup:
 ### 项目结构
 
 ```
+cmd/record_center/    # 应用入口
 internal/
 ├── backup/           # 备份核心功能
 ├── config/          # 配置管理
@@ -300,6 +333,9 @@ internal/
 ├── logger/          # 日志系统
 ├── progress/        # 进度显示
 └── storage/         # 备份记录存储
+pkg/utils/           # 公共工具函数
+configs/             # 配置文件
+scripts/             # 构建和工具脚本
 ```
 
 ### 依赖项
